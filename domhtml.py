@@ -8,6 +8,19 @@ import pxdom as dom
 
 import urlparse, string, re
 
+def parseString(str, uri=''):
+    di = getDOMImplementation()
+    parser = di.createLSParser(di.MODE_SYNCHRONOUS, None)
+    input = di.createLSInput()
+
+    input.stringData = str
+    input.systemId= uri
+  
+    document = HTMLDocument()
+    parser.parseWithContext(input, document,
+                            parser.ACTION_REPLACE_CHILDREN)
+
+
 class HTMLDOMImplementation(dom.DOMImplementation):
     """ Add the View, HTML, and CSS/Style (not yet implemented) features """
     def __init__(self):
@@ -59,14 +72,14 @@ _TYPE = 1
 _PERMISSIONS = 2
 class DOMObject:
     def __init__(self, readonly= False):
-        self._readonly= readonly
-        _attr = {
+        self.__dict__['_attr'] = {
             'id':        ['id', 'string', 'rw'],
             'title':     ['title', 'string', 'rw'],
             'lang':      ['lang', 'string', 'rw'],
             'dir':       ['dir', 'string', 'rw'],
             'className': ['class', 'string', 'rw']
         }
+        self._readonly= readonly
         self._sub_element = None
 
     def _get_readonly(self):
@@ -143,7 +156,7 @@ class DOMObject:
             else:
                 raise NoModificationAllowedErr(self, key)
             
-        if key[:1]=='_':
+        if key[:1]=='_' or hasattr(self, key):
             self.__dict__[key]= value
             return
     
@@ -173,7 +186,7 @@ class FilterCollection(dom.NodeListByTagName):
         when they match the conditions passed to the constructor
         """
         for childNode in element.childNodes:
-            if childNode.nodeType==Node.ELEMENT_NODE:
+            if childNode.nodeType==dom.Node.ELEMENT_NODE:
                 passed = True
                 for check in self._checks:
                     check_passed = check(childNode)
@@ -181,8 +194,8 @@ class FilterCollection(dom.NodeListByTagName):
                         passed = False
                 if passed:
                     self._list.append(childNode)
-            if childNode.nodeType in (Node.ELEMENT_NODE,
-                                      Node.ENTITY_REFERENCE_NODE):
+            if childNode.nodeType in (dom.Node.ELEMENT_NODE,
+                                      dom.Node.ENTITY_REFERENCE_NODE):
                 self._walk(childNode)
 
 class TableRowCollection(dom.NodeListByTagName):
@@ -236,18 +249,21 @@ class HTMLCollection(DOMObject):
                 return elem
             if html_mode and elem.getAttribute('name') == name:
                 return elem
-
-def _copy_and_extend(source_node, dest_node, owner_document):
-    """ Walk through the DOM tree of the provided source_node and copy the whole
-    structure into the dest_node. Also take any HTML-specific elements found and
-    extend them into their HTML-specific version before copying
-    """
-    for childNode in source_nodes.childNodes:
-        if childNode.nodeType in (Node.ELEMENT_NODE,Node.ENTITY_REFERENCE_NODE):
-            newChildNode = owner_document.createElement(childNode.tagName)
-            dest_node.appendChild(newChildNode)
-            _copy_and_extend(childNode, newChildNode, owner_document)
+    # Python-style methods
+    #
+    def __len__(self):
+        return len(self._nodelist)
     
+    def __getitem__(self, index):
+        return self._nodelist[index]
+    
+    def __setitem__(self, index, value):
+        raise dom.NoModificationAllowedErr(self, 'item(%s)' % str(index))
+    
+    def __delitem__(self, index):
+        raise dom.NoModificationAllowedErr(self, 'item(%s)' % str(index))
+
+
 class HTMLElement(DOMObject, dom.Element):
     def __init__(self, *args, **kwargs):
         DOMObject.__init__(self)
@@ -263,7 +279,7 @@ class HTMLElement(DOMObject, dom.Element):
 
 class _HTMLDisabledElement(HTMLElement):
     def __init__(self, *args, **kwargs):
-        _HTMLElement.__init__(self, *args, **kwargs)
+        HTMLElement.__init__(self, *args, **kwargs)
         self._disabled = False
     def _get_disabled(self):
         return self._disabled
@@ -279,21 +295,21 @@ class _HTMLTextElement(HTMLElement):
 class _HTMLFocusBlurElement(HTMLElement):
     def blur(self):
         if self.ownerDocument:
-            self.ownerDocument._handler_element_blur(self)
+            self.ownerDocument._handler.element_blur(self)
 
     def focus(self): 
         if self.ownerDocument:
-            self.ownerDocument._handler_element_focus(self)
+            self.ownerDocument._handler.element_focus(self)
 
 class _HTMLClickElement(HTMLElement):
     def click(self):
         if self.ownerDocument:
-            self.ownerDocument._handler_element_click(self)
+            self.ownerDocument._handler.element_click(self)
 
 class _HTMLSelectElement(HTMLElement):
     def select(self): 
         if self.ownerDocument:
-            self.ownerDocument._handler_element_select(self)
+            self.ownerDocument._handler.element_select(self)
             
 
 class _HTMLBaseFormElement(HTMLElement):
@@ -302,24 +318,27 @@ class _HTMLBaseFormElement(HTMLElement):
         this control is not within the context of a form. """
         parent = self.parentNode
         while parent and parent.tagName != 'form':
-            parent = parent.ParentNode
+            parent = parent.parentNode
         return parent
            
     def _reset(self):
         pass
 
 class _HTMLFormControlElement(_HTMLBaseFormElement,_HTMLFocusBlurElement):
-    pass
+    def __init__(self, *args, **kwargs):
+        _HTMLBaseFormElement.__init__(self, *args, **kwargs)
 
 class _HTMLFormValueElement(_HTMLFormControlElement):
     """ Base class for form controls where value and defaultValue are attributes
     """
-    def __init__(self, ownerDocument= None, namespaceURI= None,
-                 localName= None, prefix= None):
-        _HTMLFormControlElement.__init__(self, ownerDocument, namespaceURI,
-                                         localName, prefix)
-        self.defaultValue = self.getAttribute('value')
-        
+    def __init__(self, *args, **kwargs):
+        _HTMLFormControlElement.__init__(self,  *args, **kwargs)
+
+    def setAttributeNode(self, attr):
+        if attr.name == 'value':
+            self.__dict__['defaultValue'] = attr.value
+        _HTMLFormControlElement.setAttributeNode(self, attr)
+    
     def _reset(self):
         """ Basic function to reset form value """
         self.value = self.defaultValue
@@ -327,17 +346,17 @@ class _HTMLFormValueElement(_HTMLFormControlElement):
 class HTMLHtmlElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'version': ['version', 'string', 'rw']})
+        self._attr.update({'version': ['version', 'string', 'rw']})
 
 class HTMLHeadElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'profile': ['profile', 'string', 'rw']})
+        self._attr.update({'profile': ['profile', 'string', 'rw']})
 
 class HTMLLinkElement(_HTMLDisabledElement):
     def __init__(self, *args, **kwargs):
         _HTMLDisabledElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             # DOM HTML Attributes
             'charset':  ['charset', 'string', 'rw'],
             'href':     ['href', 'string', 'rw'],
@@ -349,9 +368,9 @@ class HTMLLinkElement(_HTMLDisabledElement):
             'type':     ['type', 'string', 'rw']
             })
         if self.getAttribute('rel') == 'stylesheet':
-            _attr.update({'sheet'     ['_sheet', 'local_string', 'r']})
+            self._attr.update({'sheet':     ['_sheet', 'local_string', 'r']})
 
-            if self.getAttribute('type') == 'text/css'):
+            if self.getAttribute('type') == 'text/css':
                 self._sheet = CSSStyleSheet(self)
             else:
                 self._sheet = StyleSheet(self)
@@ -362,7 +381,7 @@ class HTMLTitleElement(_HTMLTextElement):
 class HTMLMetaElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'content':   ['content', 'string', 'rw'],
             'httpEquiv': ['http-equiv', 'string', 'rw'],
             'name':      ['name', 'string', 'rw'],
@@ -372,7 +391,7 @@ class HTMLMetaElement(HTMLElement):
 class HTMLBaseElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'href':     ['href', 'string', 'rw'],
             'target':   ['target', 'string', 'rw'],
             })
@@ -380,23 +399,23 @@ class HTMLBaseElement(HTMLElement):
 class HTMLIsIndexElement(_HTMLBaseFormElement):
     def __init__(self, *args, **kwargs):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
-        _attr.update({'prompt': ['prompt', 'string', 'rw']})
+        self._attr.update({'prompt': ['prompt', 'string', 'rw']})
     
 class HTMLStyleElement(_HTMLDisabledElement):
     def __init__(self, *args, **kwargs):
         _HTMLDisabledElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'media':    ['media', 'string', 'rw'],
             'type':     ['type', 'string', 'rw'],
             # DOM StyleSheet Attributes
-            'sheet'     ['_sheet', 'local_string', 'r']
+            'sheet':     ['_sheet', 'local_string', 'r']
             })
         self._sheet = StyleSheet(self)
 
 class HTMLBodyElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'aLink':         ['alink', 'string', 'rw'],
             'background':    ['background', 'string', 'rw'],
             'bgColor':       ['bgcolor', 'string', 'rw'],
@@ -408,7 +427,7 @@ class HTMLBodyElement(HTMLElement):
 class HTMLFormElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'name':          ['name', 'string', 'rw'],
             'acceptCharset': ['accept-charset', 'string', 'rw'],
             'action':        ['action', 'string', 'rw'],
@@ -420,7 +439,7 @@ class HTMLFormElement(HTMLElement):
     def _get_elements(self):
         """ Returns a collection of all form control elements in the form. """
         return HTMLCollection(
-            FilterCollection(self, pxdom.NONS,
+            FilterCollection(self, dom.NONS,
                              lambda node: node.tagName in
                              ('input', 'button', 'select', 'optgroup',
                               'option', 'textarea', 'isindex', 'fieldset'))
@@ -431,7 +450,7 @@ class HTMLFormElement(HTMLElement):
 
     def submit(self):
         if self.ownerDocument:
-            self.ownerDocument._handler_form_submit(self)
+            self.ownerDocument._event.form_submit(self)
 
     def reset(self):
         for element in self.elements:
@@ -440,7 +459,7 @@ class HTMLFormElement(HTMLElement):
 class HTMLSelectElement(_HTMLFormControlElement):
     def __init__(self, *args, **kwargs):
         _HTMLFormControlElement.__init__(self, *args, **kwargs)        
-        _attr.update({
+        self._attr.update({
             'name':     ['name', 'string', 'rw'],
             'disabled': ['disabled', 'bool', 'rw'],
             'multiple': ['multiple', 'bool', 'rw'], 
@@ -502,7 +521,7 @@ class HTMLSelectElement(_HTMLFormControlElement):
 class HTMLOptGroupElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'disabled': ['disabled', 'bool', 'rw'],        
             'label':    ['label', 'string', 'rw'],        
             })
@@ -512,7 +531,7 @@ class HTMLOptionElement(_HTMLBaseFormElement,_HTMLTextElement):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
         self.defaultSelected = self.hasAttribute('selected')
         self._selected = self.defaultSelected
-        _attr.update({
+        self._attr.update({
             'disabled': ['disabled', 'bool', 'rw'],        
             'label':    ['label', 'string', 'rw'],        
             })
@@ -554,13 +573,10 @@ class HTMLInputElement(_HTMLFormValueElement,_HTMLFocusBlurElement,
                        _HTMLClickElement,_HTMLSelectElement):
     def __init__(self, *args, **kwargs):
         _HTMLFormValueElement.__init__(self, *args, **kwargs)
-        self.defaultChecked = self.hasAttribute('checked')
-        self._checked = self.defaultChecked
-        self._value = self.getAttribute('value')
 
-        _attr.update({
+        self._attr.update({
             'accept':   ['accept', 'string', 'rw'],        
-            'accesKey': ['accesskey', 'string', 'rw'],        
+            'accessKey': ['accesskey', 'string', 'rw'],        
             'align':    ['align', 'string', 'rw'],        
             'alt':      ['alt', 'string', 'rw'],
             'checked':  ['_checked', 'local_bool', 'rw'],            
@@ -575,6 +591,24 @@ class HTMLInputElement(_HTMLFormValueElement,_HTMLFocusBlurElement,
             'useMap':    ['usemap', 'string', 'rw'],        
             'value':     ['_value', 'local_string', 'rw']
             })
+        self.__dict__['defaultChecked'] = False
+        self.__dict__['_checked'] = False
+
+    def _reset(self):
+        _HTMLFormValueElement._reset(self)
+        self.checked = self.defaultChecked
+
+    _attrs_to_catch = {
+        'value': ('_value',),
+        'checked': ('_checked', 'defaultChecked')
+        }
+    def setAttributeNode(self, attr):
+        tc = self._attrs_to_catch.get(attr.name, None)
+        if tc:
+            for item in tc:
+                self.__dict__[item] = attr.value
+            
+        _HTMLFormValueElement.setAttributeNode(self, attr)
 
 class HTMLTextAreaElement(_HTMLFormControlElement,_HTMLFocusBlurElement,
                           _HTMLSelectElement):
@@ -583,8 +617,8 @@ class HTMLTextAreaElement(_HTMLFormControlElement,_HTMLFocusBlurElement,
         self.defaultValue = self.textContent
         self.value = self.defaultValue
 
-        _attr.update({
-            'accesKey': ['accesskey', 'string', 'rw'],        
+        self._attr.update({
+            'accessKey': ['accesskey', 'string', 'rw'],        
             'cols':     ['cols', 'long', 'rw'],        
             'disabled': ['disabled', 'bool', 'rw'],
             'name':      ['name', 'string', 'rw'],        
@@ -604,8 +638,8 @@ class HTMLTextAreaElement(_HTMLFormControlElement,_HTMLFocusBlurElement,
 class HTMLButtonElement(_HTMLBaseFormElement):
     def __init__(self, *args, **kwargs):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
-        _attr.update({
-            'accesKey': ['accesskey', 'string', 'rw'],        
+        self._attr.update({
+            'accessKey': ['accesskey', 'string', 'rw'],        
             'disabled': ['disabled', 'bool', 'rw'],
             'name':     ['name', 'string', 'rw'],        
             'tabIndex': ['tabindex', 'long', 'rw'],        
@@ -616,8 +650,8 @@ class HTMLButtonElement(_HTMLBaseFormElement):
 class HTMLLabelElement(_HTMLBaseFormElement):
     def __init__(self, *args, **kwargs):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
-        _attr.update({
-            'accesKey': ['accesskey', 'string', 'rw'],        
+        self._attr.update({
+            'accessKey': ['accesskey', 'string', 'rw'],        
             'htmlFor':  ['for', 'string', 'rw']
             })
 
@@ -626,15 +660,15 @@ class HTMLFieldSetElement(_HTMLBaseFormElement):pass
 class HTMLLegendElement(_HTMLBaseFormElement):
     def __init__(self, *args, **kwargs):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
-        _attr.update({
-            'accesKey': ['accesskey', 'string', 'rw'],        
+        self._attr.update({
+            'accessKey': ['accesskey', 'string', 'rw'],        
             'align':    ['align', 'string', 'rw']
             })    
 
 class HTMLULstElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'compact': ['compact', 'bool', 'rw'],        
             'type':    ['type', 'string', 'rw']
             })
@@ -642,7 +676,7 @@ class HTMLULstElement(HTMLElement):
 class HTMLOLstElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'compact': ['compact', 'bool', 'rw'],
             'start':   ['start', 'long', 'rw'],
             'type':    ['type', 'string', 'rw']
@@ -651,22 +685,22 @@ class HTMLOLstElement(HTMLElement):
 class HTMLDListElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'compact': ['compact', 'bool', 'rw']})
+        self._attr.update({'compact': ['compact', 'bool', 'rw']})
 
 class HTMLDirectoryElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'compact': ['compact', 'bool', 'rw']})
+        self._attr.update({'compact': ['compact', 'bool', 'rw']})
 
 class HTMLMenuElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'compact': ['compact', 'bool', 'rw']})
+        self._attr.update({'compact': ['compact', 'bool', 'rw']})
 
 class HTMLLIElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'type':  ['type', 'string', 'rw'],
             'value': ['value', 'long', 'rw']
             })
@@ -674,37 +708,37 @@ class HTMLLIElement(HTMLElement):
 class HTMLDivElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'align': ['align', 'string', 'rw']})
+        self._attr.update({'align': ['align', 'string', 'rw']})
 
 class HTMLParagraphElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'align': ['align', 'string', 'rw']})
+        self._attr.update({'align': ['align', 'string', 'rw']})
 
 class HTMLHeadingElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'align': ['align', 'string', 'rw']})
+        self._attr.update({'align': ['align', 'string', 'rw']})
 
 class HTMLQuoteElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'cite': ['cite', 'string', 'rw']})
+        self._attr.update({'cite': ['cite', 'string', 'rw']})
         
 class HTMLPreElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'width': ['width', 'long', 'rw']})
+        self._attr.update({'width': ['width', 'long', 'rw']})
 
 class HTMLBRElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'clear': ['clear', 'string', 'rw']})
+        self._attr.update({'clear': ['clear', 'string', 'rw']})
         
 class HTMLBaseFontElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'color':  ['color', 'string', 'rw'],
             'face':   ['face', 'string', 'rw'],
             'size':   ['size', 'long', 'rw']
@@ -715,7 +749,7 @@ class HTMLFontElement(HTMLBaseFontElement):pass
 class HTMLHRElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'align':   ['align', 'string', 'rw'],
             'noShade': ['noshade', 'boolean', 'rw'],
             'size':    ['size', 'string', 'rw'],
@@ -725,7 +759,7 @@ class HTMLHRElement(HTMLElement):
 class HTMLModElement(HTMLElement):
    def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'cite':     ['cite', 'string', 'rw'],
             'dateTime': ['datetime', 'string', 'rw']
             })
@@ -733,12 +767,12 @@ class HTMLModElement(HTMLElement):
 class HTMLAnchorElement(_HTMLFocusBlurElement):
     def __init__(self, *args, **kwargs):
         _HTMLFocusBlurElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'accessKey': ['accesskey', 'string', 'rw'],
             'charset':   ['charset', 'string', 'rw'],
             'coords':    ['coords', 'string', 'rw'],
             'href':      ['href', 'string', 'rw'],
-            'hfrelang':  ['hreflang', 'string', 'rw'],
+            'hreflang':  ['hreflang', 'string', 'rw'],
             'name':      ['name', 'string', 'rw'],
             'rel':       ['rel', 'string', 'rw'],
             'rev':       ['rev', 'string', 'rw'],
@@ -751,7 +785,7 @@ class HTMLAnchorElement(_HTMLFocusBlurElement):
 class HTMLImageElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'name':     ['name', 'string', 'rw'],
             'align':    ['align', 'string', 'rw'],
             'alt':      ['alt', 'string', 'rw'],
@@ -769,7 +803,7 @@ class HTMLImageElement(HTMLElement):
 class HTMLObjectElement(_HTMLBaseFormElement):
     def __init__(self, *args, **kwargs):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'code':     ['code', 'string', 'rw'],
             'align':    ['align', 'string', 'rw'],
             'archive':  ['archive', 'string', 'rw'],
@@ -796,7 +830,7 @@ class HTMLObjectElement(_HTMLBaseFormElement):
 class HTMLParamElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'name':      ['name', 'string', 'rw'],
             'type':      ['type', 'string', 'rw'],
             'value':     ['value', 'string', 'rw'],
@@ -806,7 +840,7 @@ class HTMLParamElement(HTMLElement):
 class HTMLAppletElement         (HTMLElement):
     def __init__(self, *args, **kwargs):
         _HTMLBaseFormElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'align':    ['align', 'string', 'rw'],
             'alt':      ['alt', 'string', 'rw'],
             'archive':  ['archive', 'string', 'rw'],
@@ -823,7 +857,7 @@ class HTMLAppletElement         (HTMLElement):
 class HTMLMapElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'name': ['name', 'string', 'rw']})
+        self._attr.update({'name': ['name', 'string', 'rw']})
 
     def _get_areas(self):
         return self.getElementsByTagName('area')
@@ -831,7 +865,7 @@ class HTMLMapElement(HTMLElement):
 class HTMLAreaElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'accessKey': ['accesskey', 'string', 'rw'],
             'alt':       ['alt', 'string', 'rw'],
             'coords':    ['coords', 'string', 'rw'],
@@ -845,7 +879,7 @@ class HTMLAreaElement(HTMLElement):
 class HTMLScriptElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'text':    ['text', 'string', 'rw'],
             'htmlFor': ['for', 'string', 'rw'],
             'event':   ['event', 'string', 'rw'],
@@ -858,7 +892,7 @@ class HTMLScriptElement(HTMLElement):
 class HTMLTableElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'align':       ['align', 'string', 'rw'],
             'bgColor':     ['bgcolor', 'string', 'rw'],
             'border':      ['border', 'string', 'rw'],
@@ -975,12 +1009,12 @@ class HTMLTableElement(HTMLElement):
 class HTMLTableCaptionElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({'align': ['align', 'string', 'rw']})
+        self._attr.update({'align': ['align', 'string', 'rw']})
         
 class HTMLTableColElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'align':  ['align', 'string', 'rw'],
             'ch':     ['char', 'string', 'rw'],
             'chOff':  ['charoff', 'string', 'rw'],
@@ -992,7 +1026,7 @@ class HTMLTableColElement(HTMLElement):
 class HTMLTableSectionElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'align':  ['align', 'string', 'rw'],
             'ch':     ['char', 'string', 'rw'],
             'chOff':  ['charoff', 'string', 'rw'],
@@ -1035,7 +1069,7 @@ def _find_self(self, list):
 class HTMLTableRowElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'align':   ['align', 'string', 'rw'],
             'bgColor': ['bgcolor', 'string', 'rw'],
             'ch':      ['char', 'string', 'rw'],
@@ -1076,7 +1110,7 @@ class HTMLTableRowElement(HTMLElement):
 class HTMLTableCellElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'abbr':    ['abbr', 'string', 'rw'],
             'align':   ['align', 'string', 'rw'],
             'axis':    ['axis', 'string', 'rw'],
@@ -1101,7 +1135,7 @@ class HTMLTableCellElement(HTMLElement):
 class HTMLFrameSetElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'cols': ['cols', 'string', 'rw'],
             'rows': ['rows', 'string', 'rw']
             })
@@ -1109,7 +1143,7 @@ class HTMLFrameSetElement(HTMLElement):
 class HTMLFrameElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'contentDocument':  ['_contentDocument', 'local_string', 'r'],
             'frameBorder':      ['frameborder', 'string', 'rw'],
             'longDesc':         ['longdesc', 'string', 'rw'],
@@ -1125,7 +1159,7 @@ class HTMLFrameElement(HTMLElement):
 class HTMLIFrameElement(HTMLElement):
     def __init__(self, *args, **kwargs):
         HTMLElement.__init__(self, *args, **kwargs)
-        _attr.update({
+        self._attr.update({
             'contentDocument':  ['_contentDocument', 'local_string', 'r'],
             'align':            ['align', 'string', 'rw'],
             'frameBorder':      ['frameborder', 'string', 'rw'],
@@ -1190,6 +1224,40 @@ def _lookup_html_element(tagName):
         return EXTENDED_HTML_ELEMENTS[tagName]
     return HTMLElement
 
+
+def _copy_and_extend(source_node, dest_node, owner_document):
+    """ Walk through the DOM tree of the provided source_node and copy the whole
+    structure into the dest_node. Also take any HTML-specific elements found and
+    extend them into their HTML-specific version before copying
+    """
+    for childNode in source_node.childNodes:
+        newChildNode = owner_document.createElement(childNode.tagName)
+        dest_node.appendChild(newChildNode)
+        _copy_and_extend(childNode, newChildNode, owner_document)
+
+#        if self._current_node.childNodes:
+#            self._current_node = self._current_node.firstChild
+#        else:
+#            old_node = self._current_node # backup in case there's no next
+#            
+#            while (not self._current_node.nextSibling and
+#                   self._current_node.parentNode):
+#                self._current_node = self._current_node.parentNode
+#            if not self._current_node.nextSibling:
+#                self._current_node = old_node
+#                return None
+#            self._current_node = self._current_node.nextSibling
+#        elem = self._current_node
+#        elem._computed_style = self._document.defaultView.getComputedStyle(
+#            elem, None)
+#        return elem
+
+class _HTMLEventHandler:
+    def __init__(self):
+        self._handlers = {}
+    def __getattr__(self, key):
+        return self._handlers.get(key, lambda x: None)
+   
 class HTMLDocument(dom.Document):
     """ Implements the DOM HTMLDocument interface
     and the DOM DocumentStyle interface
@@ -1199,19 +1267,22 @@ class HTMLDocument(dom.Document):
         """ Initialize the HTMLDocument from an existing Document """
         dom.Document.__init__(self)
 
-        self._cookie_handler = {'read': None, 'write': None}
-        self._form_submit_handler = None
+        self._handler = _HTMLEventHandler()
 
         self._styleSheets = StyleSheetList(self)
+
+        self._referrer = referrer
 
         if document:
             # copy the original document
             document._cloneTo(self)
             self._documentURI = self._documentURI or uri
-            self._referrer = referrer
 
             # Convert the DOM over to HTML and copy children over
             _copy_and_extend(document, self, self)
+
+    def _get_defaultView(self):
+        return ViewCSS(self)
 
     def _get_styleSheets(self):
         return self._styleSheets
@@ -1315,22 +1386,13 @@ class HTMLDocument(dom.Document):
                              )
             )
 
-    def set_cookie_handler(self, handler):
-        self._cookie_handler = handler
+    def set_handler(self, key, handler):
+        self._handler._handlers[key] = handler
+
     def _get_cookie(self):
-        if self._cookie_handler['read']:
-            return self._cookie_handler['read']()
-        return ''
+        return self._handler.cookie_read(None) or ''
     def _set_cookie(self, cookie):
-        if self._cookie_handler['write']:
-            return self._cookie_handler['write'](cookie)
-
-    def set_form_submit_handler(self, handler):
-        self._form_submit_handler = handler
-
-    def _handle_form_submit(self, form):
-        if self._form_submit_handler:
-            self._form_submit_handler(form)
+        return self._handler.cookie_write(cookie)
 
     def open(self):
         self._open = True
@@ -1356,7 +1418,8 @@ class HTMLDocument(dom.Document):
     def getElementsByName(self, name):
         return HTMLCollection(
             FilterCollection(self, dom.NONS,
-                             lambda node: node.name != '')
+                             lambda node:
+                             hasattr(node, 'name') and node.name == name)
             )
 
 # DOM 2 Style Sheets
@@ -1366,16 +1429,16 @@ class StyleSheet(DOMObject):
     def __init__(self, ownerNode, parentSheet=None):
         DOMObject.__init__(self)
 
-        self._ownerNode = owner
+        self._ownerNode = ownerNode
         self._parentStyleSheet = parentSheet
         self._disabled = False
         
-        _attr.update({
+        self._attr.update({
             'disabled':         ['_disabled', 'local_bool', 'rw'],
             'ownerNode':        ['ownerNode', 'local_string', 'r'],
             'parentStyleSheet': ['parentStypeSheet', 'local_string', 'r'],
 
-            'media'             ['_media', 'local_string', 'r']
+            'media':             ['_media', 'local_string', 'r']
             })
         # We only ever need a single instance of this MediaList
         if self._ownerNode:
@@ -1407,9 +1470,9 @@ class StyleSheetList(DOMObject):
 
     # The following two methods make sure the list is always accurate
     def _check(self):
-        if self._sequence != self._document._sequence
-        self._regen_list()
-        self._sequence = self._document._sequence
+        if self._sequence != self._document._sequence:
+            self._regen_list()
+            self._sequence = self._document._sequence
 
     def _regen_list(self):
         elems = FilterCollection(self._document, dom.NONS,
@@ -1441,7 +1504,7 @@ class MediaList(DOMObject):
     def _parse(self):
         medialist = self._mediaText.split(',')
         regex = re.compile('^[^-a-zA-Z0-9]')
-        for i in range(medialist.length):
+        for i in range(len(medialist)):
             value = medialist[i].strip()
             mo = regex.match(value)
             if mo:
@@ -1474,6 +1537,7 @@ class MediaList(DOMObject):
         if newmedium in self._medialist:
             self.deleteMedium(newmedium)
         self._medialist.append(newmedium)
+
         
 # DOM 2 CSS
 # ---------
@@ -1483,3 +1547,13 @@ class MediaList(DOMObject):
 #    def __init__(self, ownerNode, parentSheet):
 #        StyleSheet.__init__(self, ownerNode, parentSheet)
 #        self._sub_element = css.CSSStyleSheet(
+
+class ViewCSS(AbstractView):
+    def getComputedStyle(elt, psuedoElt):
+        """ Return a CSSStyleDeclaration with the computed style of the element
+        (or psuedo element if psuedoElt is not None)
+
+        This is just a dummy version for now which returns the very minimum
+        basic styles.
+        """
+        

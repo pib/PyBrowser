@@ -9,6 +9,9 @@ tidy_options = dict(output_xhtml=1,
                     tidy_mark=0,
                     char_encoding='utf8')
 
+def clean_document(doc_str):
+    tidy_doc = tidy.parseString(doc_str, **tidy_options)
+    return str(tidy_doc)
 
 def getDocument(document_start):
     """ Return a DOM Document. TODO: make this take into account the
