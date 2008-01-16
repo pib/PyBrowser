@@ -1,7 +1,7 @@
 import simpleget
-import boxmodel
+import boxmodel.layout as layout
 
 # Transform it into and HTMLDocument
 doc = simpleget.get('http://google.com')
 
-boxes = boxmodel.PageLayout(doc, 800, 600)
+boxes = layout.PageLayout(doc, 800, 600)

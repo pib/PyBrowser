@@ -1,10 +1,42 @@
+""" Fully compliant (I think) DOM 2 HTML implementation.
+Currently requires pxdom (http://doxdesk.com/software/py/pxdom.html)
+
+Licence (new-BSD-style)
+
+Copyright (C) 2008, Paul Bonser. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+* Redistributions must reproduce the above copyright notice, this list
+  of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* The name of the copyright holder may not be used to endorse or
+  promote products derived from this software without specific prior
+  written permission.
+
+This software is provided by the copyright holder and contributors "as
+is" and any express or implied warranties, including, but not limited
+to, the implied warranties of merchantability and fitness for a
+particular purpose are disclaimed. In no event shall the copyright
+owner or contributors be liable for any direct, indirect, incidental,
+special, exemplary, or consequential damages (including, but not
+limited to, procurement of substitute goods or services; loss of use,
+data, or profits; or business interruption) however caused and on any
+theory of liability, whether in contract, strict liability, or tort
+(including negligence or otherwise) arising in any way out of the use
+of this software, even if advised of the possibility of such damage.
+"""
+
 # Extend the DOM with DOM 2 HTML, DOM 2 View, and DOM 2 CSS/Style support
 
 #TODO get rid of as much dependence on pxdom as possible for portability between
 # DOM implementations in the future
 import pxdom as dom
 
-#from cssutils import css
+from cssutils import css
 
 import urlparse, string, re
 
@@ -1556,4 +1588,49 @@ class ViewCSS(AbstractView):
         This is just a dummy version for now which returns the very minimum
         basic styles.
         """
-        
+        return css.CSSStyleDeclaration(cssText =
+                                       """
+                                       position: static;
+                                       display: inline;
+                                       visibility: visible;
+                                       z-index: auto;
+                                       overflow: visible;
+                                       white-space: normal;
+                                       clip: auto;
+                                       float: none;
+                                       clear: none;
+
+                                       width: auto;
+                                       height: auto;
+                                       top: auto;
+                                       right: auto;
+                                       bottom: auto;
+                                       left: auto;
+                                       
+                                       margin-top:    0px;
+                                       margin-bottom: 0px;
+                                       margin-right:  0px;
+                                       margin-left:   0px;
+                                       
+                                       padding-top:    0px;
+                                       padding-bottom: 0px;
+                                       padding-right:  0px;
+                                       padding-left:   0px;
+
+                                       border-top-width:    0px;
+                                       border-bottom-width: 0px;
+                                       border-right-width:  0px;
+                                       border-left-width:   0px;
+                                       
+                                       border-top-color:    #000000;
+                                       border-bottom-color: #000000;
+                                       border-right-color:  #000000;
+                                       border-left-color:   #000000;
+                                       
+                                       border-top-style:    none;
+                                       border-bottom-style: none;
+                                       border-right-style:  none;
+                                       border-left-style:   none;
+
+                                       """
+                                       )
