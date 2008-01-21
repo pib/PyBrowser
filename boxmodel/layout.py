@@ -8,7 +8,7 @@ class PageLayout:
     Keeps context so, for example, if an
     """
 
-    def __init__(self, document, width, height, medium='screen'):
+    def __init__(self, browser, document, width, height, medium='screen'):
         """ Initialize the document, width, height, and medium of the page to
         be laid out.
         Currently 'screen' is the default and only supported value of medium
@@ -17,6 +17,7 @@ class PageLayout:
         self._height = height
         self._medium = medium
 
+        self._browser = browser
         self._document = document
         self._current_node = document
         self._initial_containing_block = BlockBox(document, None, width, height)
@@ -55,8 +56,8 @@ class PageLayout:
         elif style.display == 'block':
             box = BlockBox(elem, self._current_box)
             self.layoutBlockBox(box)
+        self._current_box = box
         return box
-
 
     def layoutInlineBoxes(self, box):
         """ Lays out a series of inline boxes into line boxes, contained in a
@@ -75,13 +76,18 @@ class PageLayout:
             - return
 
           - if the current element is a text element:
-            - 
+            - create a new TextBox with the element
+            - Add the TextBox to the LineBoxBox
+          - if the current element is a replaced or inline-block element:
+            - if the current element is an inline-block element:
+              - layoutBlockBox
+            - Add the element to the LineBoxBox
           - nextElement()
         """
         elem = self._current_element
 
         while elem:
-            if elem._style.display is not 'block':
+            if elem._style.display is 'block':
                 self.prevElement()
                 break
 
@@ -89,6 +95,12 @@ class PageLayout:
                 elem = self.skipElement()
 
             if not elem: break
+
+            if elem.nodeName is '#text':
+                textbox = TextBox(elem, self._browser.renderer)
+                box.addInlineBox(textbox)
+            # TODO: Add replaced and inline-block code here
+            self.nextElement()
 
             
 

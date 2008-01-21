@@ -1,6 +1,6 @@
 class Box:
     """ Base Box Class """
-    def __init__(self, ownerNode, parentBox, width=None, height=None):):
+    def __init__(self, ownerNode, parentBox, width=None, height=None):
         self.ownerNode = ownerNode
         self.parentBox = parentBox        
         self._width = width or parentBox.width
@@ -41,6 +41,10 @@ class TextBox(InlineBox):
     for each containing inline element.  This box can be split at word
     boundaries if it needs to be.
     """
+    def __init__(self, elem, renderer):
+        self.ownerNode = elem
+        self.parentBox = None
+        (self.width, self.height) = renderer.text_size(elem.nodeValue)
 
 class LineBox(BlockBox):
     """ Represents a box which can hold inline boxes. This specialized

@@ -16,7 +16,12 @@ class Browser (object):
     browser instance
     """
 
-    def __init__(self):
+    def __init__(self, dom, renderer, ui, layout):
+        self.dom = dom
+        self.renderer = renderer
+        self.ui = ui
+        self.layout = layout
+        
         self.fetchers = {'http': urllib2Wrapper.open,
                          'file': urllib2Wrapper.open}
         
@@ -30,6 +35,3 @@ class Browser (object):
 
         return f
 
-
-        
-            
