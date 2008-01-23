@@ -51,6 +51,7 @@ def parseString(str, uri=''):
     document = HTMLDocument()
     parser.parseWithContext(input, document,
                             parser.ACTION_REPLACE_CHILDREN)
+    return document
 
 
 class HTMLDOMImplementation(dom.DOMImplementation):
@@ -109,7 +110,8 @@ class DOMObject:
             'title':     ['title', 'string', 'rw'],
             'lang':      ['lang', 'string', 'rw'],
             'dir':       ['dir', 'string', 'rw'],
-            'className': ['class', 'string', 'rw']
+            'className': ['class', 'string', 'rw'],
+            'computed_style': ['_computed_style', 'local_string', 'rw']
         }
         self._readonly= readonly
         self._sub_element = None
@@ -1581,7 +1583,7 @@ class MediaList(DOMObject):
 #        self._sub_element = css.CSSStyleSheet(
 
 class ViewCSS(AbstractView):
-    def getComputedStyle(elt, psuedoElt):
+    def getComputedStyle(self, elt, psuedoElt):
         """ Return a CSSStyleDeclaration with the computed style of the element
         (or psuedo element if psuedoElt is not None)
 

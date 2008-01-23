@@ -42,13 +42,13 @@ class PageLayout:
         """
         elem = self.nextElement()
 
-        style = elem._computed_style
+        style = self._document.defaultView.getComputedStyle(elem, None)
 
         while style.display == 'none':
             elem = self.skipElement()
             if not elem:
                 return None
-            style = elem._computed_style
+            style = self._document.defaultView.getComputedStyle(elem, None)
 
         if style.display == 'inline':
             box = LineBoxBox(elem, self._current_box)
@@ -84,14 +84,16 @@ class PageLayout:
             - Add the element to the LineBoxBox
           - nextElement()
         """
-        elem = self._current_element
+        elem = self._current_node
+
+        style = self._document.defaultView.getComputedStyle(elem, None)
 
         while elem:
-            if elem._style.display is 'block':
+            if style.display is 'block':
                 self.prevElement()
                 break
 
-            if elem._style.display is 'none':
+            if style.display is 'none':
                 elem = self.skipElement()
 
             if not elem: break
@@ -100,10 +102,7 @@ class PageLayout:
                 textbox = TextBox(elem, self._browser.renderer)
                 box.addInlineBox(textbox)
             # TODO: Add replaced and inline-block code here
-            self.nextElement()
-
-            
-
+            elem = self.nextElement()
             
     
     def layoutBlockBox(self, box):
@@ -132,7 +131,7 @@ class PageLayout:
            
         """
 
-    def skipElement(self, pretend=False, inlineboxes=False):
+    def skipElement(self, pretend=False):
         """ Moves the internal pointer to the next element which is not a child
         of the current element. This is used when an element has display: none
 
@@ -146,35 +145,20 @@ class PageLayout:
             - return None
         """
         old_node = self._current_node # backup in case there's no next
-        old_box = self._current_box
         
         while (not self._current_node.nextSibling and
                self._current_node.parentNode):
             self._current_node = self._current_node.parentNode
-            if inlineboxes:
-                self._current_box = self._current_box.parentBox
             
         if not self._current_node.nextSibling:
             self._current_node = old_node
-            self._current_box = old_box
             return None
         self._current_node = self._current_node.nextSibling
-        if inlineboxes:
-            self._current_box = InlineBox(self._current_node,
-                                          self._current_box)
         
         elem = self._current_node
-        elem._style = self._document.defaultView.getComputedStyle(
-            elem, None)
 
-        box = self._current_box
-        
         if pretend:
             self._current_node = old_node
-            self._current_box = old_box
-
-        if inlineboxes:
-            return (elem, box)
             
         return elem        
         
@@ -200,17 +184,10 @@ class PageLayout:
         """
         if self._current_node.childNodes:
             self._current_node = self._current_node.firstChild
-            if inlineboxes:
-                self._current_box = InlineBox(self._current_node,
-                                              self._current_box)
         else:
-            return self.skipElement(inlineboxes=inlineboxes)
-        elem = self._current_node
-        elem._style = self._document.defaultView.getComputedStyle(
-            elem, None)
-        
-        if inlineboxes:
-            return (elem, self._current_box)
+            return self.skipElement()
+
+        elem = self._current_node        
         return elem
 
     def prevElement(self, pretend=False):
@@ -238,8 +215,6 @@ class PageLayout:
                 return None
             self._current_node = self._current_node.parentNode    
         elem = self._current_node
-        elem._style = self._document.defaultView.getComputedStyle(
-            elem, None)
 
         if pretend:
             self._current_node = old_node

@@ -1,30 +1,64 @@
+import re
+
+findwhitespace = re.compile('\s', re.MULTILINE)
+
 class Box:
     """ Base Box Class """
-    def __init__(self, ownerNode, parentBox, width=None, height=None):
+    def __init__(self, ownerNode, parentBox, x=None, y=None):
         self.ownerNode = ownerNode
-        self.parentBox = parentBox        
-        self._width = width or parentBox.width
-        self._height = height
-        self._x = None
-        self._y = None
+        self.parentBox = parentBox
+        self.x = self._current_x = x
+        self.y = self._current_y = y
+        self.width = self.height = None
 
-        if parentBox:
-            parentBox.addChildBox(self)
         self.childBoxes = []
 
     def addChildBox(self, box):
         self.childBoxes.append(box)
 
-    def getWidth(self):
-        return self._width
-    def getHeight(self):
-        return self._height
+    def floatsAt(self, y):
+        """ Returns a (potentially empty) array of floating elements which will
+        affect elements at the specified y coordinate
+        """
+        # TODO: implement floats and add them to this function
+        return []
 
-    def getX(self):
-        return self._x
-    def getY(self):
-        return self._y
+    def rightOfLeftFloats(floats):
+        """ Static function to determine the rightmost left float in a set of
+        floats. Used to determine how wide a LineBox can be at any given point.
+        """
+        rm_right = self.x
+        for box in floats:
+            right = box.x + box.getWidth()
+            if right > lm_right:
+                rm_right = right
+        return rm_right
+            
 
+    def leftOfRightFloats(floats):
+        """ Static function to determine the leftmost right float in a set of
+        floats. Used to determine how wide a LineBox can be at any given point.
+        """
+        lm_left = self.x+self.getWidth()
+        for box in floats:
+            left = box.x
+            if left > lm_left:
+                lm_left = left
+        return lm_left
+
+    def widthAtY(self, y):
+        """ Returns the width available at the specified y location, taking
+        floats into account
+        """
+        floats = self.floatsAt(y)
+        if floats:
+            width = (Box.leftOfRightFloats(floats) -
+                     Box.rightOfLeftFloats(floats))
+        else:
+            width = self.getWidth()
+
+        return width
+        
     
 class BlockBox(Box):
     """ Represents a CSS block box """
@@ -33,6 +67,13 @@ class InlineBox(Box):
     """ Base class for inline boxes. An inline box can (potentially)
     be split into multiple smaller inline boxes, and can also contain
     other inline boxes"""
+    def split(self, width):
+        """ Split this box at the specified width. Margins and borders are
+        taken into consideration.
+        Return the two new boxes in an array.
+        If the box can't be split, return self in an array.
+        """
+        return [self]
 
 class TextBox(InlineBox):
     """ Represents a box which wraps around a text element. Actually
@@ -41,10 +82,105 @@ class TextBox(InlineBox):
     for each containing inline element.  This box can be split at word
     boundaries if it needs to be.
     """
-    def __init__(self, elem, renderer):
+    FULL  = 0 # Full text element, not split
+    LEFT  = 1 # Left box after an initial split
+    MID   = 2 # Middle box ( left box after two or more splits)
+    RIGHT = 3 # Right box after split
+    def __init__(self, elem, renderer, text=None, parentBox=None,
+                 type=TextBox.FULL):
         self.ownerNode = elem
-        self.parentBox = None
-        (self.width, self.height) = renderer.text_size(elem.nodeValue)
+        self.parentBox = parentBox
+        self._renderer = renderer
+
+        # type tells us whether we need to draw the left and right borders,
+        # paddings, and margins
+        self._type = type
+
+        # TODO: implement different white-space settings
+
+        # compress down whitespace
+        if not text:
+            text = elem.nodeValue
+        else:
+            text = text.strip()
+        self.text = re.sub('\s+', ' ', text)
+        
+        (self.width, self.height) = renderer.text_size(self.text,
+                                                       self.ownerNode)
+        self._calc_size()
+
+    def _calc_size(self):
+        self._left_width = 0
+        self._right_width = 0
+        self._full_width = self.width
+
+        return # TODO: make the following code work correctly
+
+        style = self.ownerNode.ownerDocument.getComputedStyle(
+            self.ownerNode, None)
+        self._left_width = style.marginLeft + style.borderLeftWidth + \
+                           style.paddingLeft
+        self._right_width = style.paddingRight + style.borderRightWidth + \
+                            style.marginRight
+
+        self._full_width = self.width + self._left_width + self._right_width
+
+    def fullWidth(self):
+        return self._full_width
+        
+    def split(self, width):
+        if width > self._full_width:
+            return [self]
+
+        text = self.text
+        whitespace = findwhitespace.search(text)
+        
+        if not whitespace:
+            return [self]
+
+        # find all the positions which we can split at:
+        splits = []
+        while whitespace:
+            splits.append(whitespace.start())
+            whitespace = findwhitespace.search(text, whitespace.end())
+
+        split = None
+        for s in splits:
+            (w, h) =  self._renderer.text_size(text[:s], self.ownerNode)
+            split_width = w + self._left_width
+
+            # we want this to be as long as possible without being longer than
+            # width.
+            
+            # If a split is too wide 
+            if split_width > width:
+                # ...and we found a thinner one previously, use the previous one
+                if split:
+                    break
+                # ...and it's the first split we found, use it
+                split = s
+                break
+
+            # otherwise, store the split in case the next one is too wide
+            split = s
+            # In the unlikely case that the split is exactly width, use it
+            if split_width == width:
+                break
+
+        lefttext = text[:split]
+        righttext = text[split:]
+
+        # Pick the type of the two sub-boxes based on the current type
+        (lt, rt) = {
+            TextBox.FULL: (TextBox.LEFT, TextBox.RIGHT),
+            TextBox.LEFT: (TextBox.LEFT, TextBox.MID),
+            TextBox.MID:  (TextBox.MID, TextBox.MID),
+            TextBox.RIGHT:(TextBox.MID, TextBox.RIGHT)
+            }[self._type]
+
+        return [TextBox(self.ownerNode, self._renderer, lefttext, self, lt),
+                TextBox(self.ownerNode, self._renderer, righttext, self, rt)]
+        
 
 class LineBox(BlockBox):
     """ Represents a box which can hold inline boxes. This specialized
@@ -56,15 +192,16 @@ class LineBox(BlockBox):
 
 class LineBoxBox(BlockBox):
     """ Represents the implicit box which contains line boxes """
-    def __init__(self, ownerNode, parentBox, width=None, height=None):
-        BlockBox.__init__(self, ownerNode, parentBox, width, height)
-        self._lines = []
+    def __init__(self, ownerNode, parentBox, width=None):
+        BlockBox.__init__(self, ownerNode, parentBox, width, 0)
         # remaining space on the current line, starts at zero so we add a new
         # line for the first inline box added.
-        self._remaining_space = 0
+        self._remaining_width = 0
 
-    def addLine(self):
-        self._lines.append(LineBox(self.ownerNode, self, self.getWidth()))
+    def addChildBox(self):
+        width = self.widthAtY(self._current_y)
+        BlockBox.addChildBox(self, LineBox(self.ownerNode, self, width))
+        self._remaining_width = width
 
     def addInlineBox(self, box):
         """ Add an inline box into the current line box or to a new
@@ -84,3 +221,29 @@ class LineBoxBox(BlockBox):
           - Add the new box to this box
           - set the status of this box to overflowed,
         """
+
+        nextbox = box
+        while nextbox:
+            nextbox = None
+
+            width = box.fullWidth()
+            height = box.height
+
+            # TODO: put float handling code in here
+        
+            if width > self._remaining_width:
+                boxes = box.split(self._remaining_width)
+                box = boxes[0]
+
+                #continue if the box was split
+                if len(boxes) == 2:
+                    nextbox = boxes[1]
+                    
+                # if the returned box doesn't fit on the current line and there
+                # are already elements on the current line, add a new line
+                if box.fullWidth() > self._remaining_width and \
+                       len(self._lines[-1].childBoxes) > 0:
+                    self.addLine()
+            
+            self._lines[-1].addChildBox(box)
+            self._remaining_width -= width
