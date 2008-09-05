@@ -4,11 +4,14 @@ findwhitespace = re.compile('\s', re.MULTILINE)
 
 class Box:
     """ Base Box Class """
-    def __init__(self, ownerNode, parentBox, x=None, y=None):
+    def __init__(self, ownerNode, parentBox):
         self.ownerNode = ownerNode
         self.parentBox = parentBox
-        self.x = self._current_x = x
-        self.y = self._current_y = y
+
+        #the fact that these are set to none will cause issues.
+        # subclasses need to set these properly
+        self.x = None
+        self.y = None
         self.width = self.height = None
 
         self.childBoxes = []
@@ -55,13 +58,46 @@ class Box:
             width = (Box.leftOfRightFloats(floats) -
                      Box.rightOfLeftFloats(floats))
         else:
-            width = self.getWidth()
+            width = self.width
 
         return width
         
-    
+class CSSBoxProps:
+    """ A class used to hold quads of values and access them by left, right,
+    top, and bottom.
+    """
+    def __init__(self, top=0, right=0, bottom=0, left=0):
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+        self.left = left
+        
+class CSSBorderProps:
+    """ A class used to hold all the info about a box's borders """
+    def __init__(self, tw, rw, bw, lw, # border widths
+                 tc, rc, bc, lc,       # border colors
+                 ts, rs, bs, ls):      # border styles
+        self.width = CSSBoxProps(tw, rw, bw, lw)
+        self.color = CSSBoxProps(tc, rc, bc, lc)
+        self.style = CSSBoxProps(ts, rs, bs, ls)
+
 class BlockBox(Box):
     """ Represents a CSS block box """
+    def __init__(self, ownerNode, parentBox, x, y):
+        if ownerNode:
+            style = ownerNode.ownerDocument.defaultView.getComputedStyle(elem,
+                                                                         None)
+            self.margin = CSSBoxProps(style.marginTop, style.marginRight,
+                                      style.marginBottom, style.marginLeft)
+            self.border = CSSBorderProps(
+                style.borderTopWidth, style.borderRightWidth,
+                style.borderBorromWidth, style.borderLeftWidth,
+                style.borderTopColor, style.borderRightColor,
+                style.borderBorromColor, style.borderLeftColor,
+                style.borderTopStyle, style.borderRightStyle,
+                style.borderBottomStyle, style.borderLeftStyle)
+            self.x = self._current_x = x
+            self.y = self._current_y = y
 
 class InlineBox(Box):
     """ Base class for inline boxes. An inline box can (potentially)
@@ -87,7 +123,7 @@ class TextBox(InlineBox):
     MID   = 2 # Middle box ( left box after two or more splits)
     RIGHT = 3 # Right box after split
     def __init__(self, elem, renderer, text=None, parentBox=None,
-                 type=TextBox.FULL):
+                 type=0):
         self.ownerNode = elem
         self.parentBox = parentBox
         self._renderer = renderer
@@ -198,7 +234,7 @@ class LineBoxBox(BlockBox):
         # line for the first inline box added.
         self._remaining_width = 0
 
-    def addChildBox(self):
+    def addLine(self):
         width = self.widthAtY(self._current_y)
         BlockBox.addChildBox(self, LineBox(self.ownerNode, self, width))
         self._remaining_width = width
@@ -230,6 +266,9 @@ class LineBoxBox(BlockBox):
             height = box.height
 
             # TODO: put float handling code in here
+
+            if self._remaining_width <= 0:
+                self.addLine()
         
             if width > self._remaining_width:
                 boxes = box.split(self._remaining_width)
@@ -238,12 +277,11 @@ class LineBoxBox(BlockBox):
                 #continue if the box was split
                 if len(boxes) == 2:
                     nextbox = boxes[1]
-                    
                 # if the returned box doesn't fit on the current line and there
                 # are already elements on the current line, add a new line
                 if box.fullWidth() > self._remaining_width and \
-                       len(self._lines[-1].childBoxes) > 0:
+                       len(self.childBoxes[-1].childBoxes) > 0:
                     self.addLine()
             
-            self._lines[-1].addChildBox(box)
+            self.childBoxes[-1].addChildBox(box)
             self._remaining_width -= width

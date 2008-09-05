@@ -11,3 +11,4 @@ class DummyBrowser:
 
 browser = DummyBrowser()
 boxes = layout.PageLayout(browser, doc, 800, 600)
+b = boxes.nextBox()

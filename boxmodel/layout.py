@@ -20,7 +20,7 @@ class PageLayout:
         self._browser = browser
         self._document = document
         self._current_node = document
-        self._initial_containing_block = BlockBox(document, None, width, height)
+        self._initial_containing_block = BlockBox(document, None, 0, 0)
         self._current_box = self._initial_containing_block
 
     def nextBox(self):
@@ -86,19 +86,19 @@ class PageLayout:
         """
         elem = self._current_node
 
-        style = self._document.defaultView.getComputedStyle(elem, None)
-
         while elem:
-            if style.display is 'block':
+            style = self._document.defaultView.getComputedStyle(elem, None)
+
+            if style.display == 'block':
                 self.prevElement()
                 break
 
-            if style.display is 'none':
+            if style.display == 'none':
                 elem = self.skipElement()
 
             if not elem: break
 
-            if elem.nodeName is '#text':
+            if elem.nodeName == '#text':
                 textbox = TextBox(elem, self._browser.renderer)
                 box.addInlineBox(textbox)
             # TODO: Add replaced and inline-block code here
