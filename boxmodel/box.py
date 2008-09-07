@@ -84,16 +84,19 @@ class CSSBorderProps:
 class BlockBox(Box):
     """ Represents a CSS block box """
     def __init__(self, ownerNode, parentBox, x, y):
+        Box.__init__(self, ownerNode, parentBox)
+        if parentBox:
+            self.width = parentBox.widthAtY(y)
         if ownerNode:
-            style = ownerNode.ownerDocument.defaultView.getComputedStyle(elem,
+            style = ownerNode.ownerDocument.defaultView.getComputedStyle(ownerNode,
                                                                          None)
             self.margin = CSSBoxProps(style.marginTop, style.marginRight,
                                       style.marginBottom, style.marginLeft)
             self.border = CSSBorderProps(
                 style.borderTopWidth, style.borderRightWidth,
-                style.borderBorromWidth, style.borderLeftWidth,
+                style.borderBottomWidth, style.borderLeftWidth,
                 style.borderTopColor, style.borderRightColor,
-                style.borderBorromColor, style.borderLeftColor,
+                style.borderBottomColor, style.borderLeftColor,
                 style.borderTopStyle, style.borderRightStyle,
                 style.borderBottomStyle, style.borderLeftStyle)
             self.x = self._current_x = x
@@ -124,6 +127,7 @@ class TextBox(InlineBox):
     RIGHT = 3 # Right box after split
     def __init__(self, elem, renderer, text=None, parentBox=None,
                  type=0):
+        InlineBox.__init__(self, elem, parentBox)
         self.ownerNode = elem
         self.parentBox = parentBox
         self._renderer = renderer
@@ -225,6 +229,15 @@ class LineBox(BlockBox):
     either side of it.
     It can also be overflowed if an inline box placed into it doesn't fit.
     """
+    def __init__(self, ownerNode, parentBox, x, y):
+        BlockBox.__init__(self, ownerNode, parentBox, x, y)
+        self.width = 0
+    def addChildBox(self, box):
+        BlockBox.addChildBox(self, box)
+        #print 'x', self.x, 'width', self.width
+        box.x = 0#self.x + self.width
+        box.y = 0#self.y
+        self.width += box.width
 
 class LineBoxBox(BlockBox):
     """ Represents the implicit box which contains line boxes """
@@ -236,7 +249,9 @@ class LineBoxBox(BlockBox):
 
     def addLine(self):
         width = self.widthAtY(self._current_y)
-        BlockBox.addChildBox(self, LineBox(self.ownerNode, self, width))
+        #print 'width', width, 'remainint', self._remaining_width
+        BlockBox.addChildBox(self, LineBox(self.ownerNode, self,
+                                           self.x, self._current_y))
         self._remaining_width = width
 
     def addInlineBox(self, box):
@@ -282,6 +297,6 @@ class LineBoxBox(BlockBox):
                 if box.fullWidth() > self._remaining_width and \
                        len(self.childBoxes[-1].childBoxes) > 0:
                     self.addLine()
-            
+                 
             self.childBoxes[-1].addChildBox(box)
             self._remaining_width -= width

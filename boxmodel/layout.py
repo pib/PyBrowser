@@ -20,8 +20,9 @@ class PageLayout:
         self._browser = browser
         self._document = document
         self._current_node = document
-        self._initial_containing_block = BlockBox(document, None, 0, 0)
+        self._initial_containing_block = BlockBox(document.documentElement, None, 0, 0)
         self._current_box = self._initial_containing_block
+        self._current_box.width = width
 
     def nextBox(self):
         """ Returns the next block box. Either an actual block box or an
