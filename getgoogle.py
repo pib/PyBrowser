@@ -34,5 +34,5 @@ class DumbBrowser:
 
 
 browser = DumbBrowser()
-browser.showPage('file:///home/pib/projects/browser/pybrowser/test.html')
+browser.showPage('http://mail.python.org/pipermail/python-list/2005-May/322354.html')
 
