@@ -258,6 +258,13 @@ class LineBoxBox(BlockBox):
         self.addChildBox(LineBox(self.ownerNode, self,
                                  self.x, self._current_y))
         self._remaining_width = width
+        if style.whiteSpace == 'pre':
+            self.pre = True
+        else:
+            self.pre = False
+
+    def addPreInlineBox(self, box):
+        
 
     def addInlineBox(self, box):
         """ Add an inline box into the current line box or to a new
@@ -277,6 +284,10 @@ class LineBoxBox(BlockBox):
           - Add the new box to this box
           - set the status of this box to overflowed,
         """
+
+        if self.pre:
+            self.addPreInlineBox(box)
+            return
 
         nextbox = box
         while nextbox:
