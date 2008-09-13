@@ -5,6 +5,7 @@ import urllib2
 
 tidy_options = dict(output_xhtml=1,
                     add_xml_decl=1,
+                    wrap=0,
                     tidy_mark=0)
 
 def get(uri):

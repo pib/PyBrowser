@@ -27,7 +27,7 @@ class DumbBrowser:
         screen = pygame.display.get_surface()
         screen.blit(page, (0,0))
         pygame.display.flip()
-
+        
         while pygame.event.wait().type != pygame.QUIT:
             pass
         
