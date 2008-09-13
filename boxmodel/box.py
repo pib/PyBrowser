@@ -132,6 +132,8 @@ class TextBox(InlineBox):
         self.ownerNode = elem
         self.parentBox = parentBox
         self._renderer = renderer
+        self.style = self.ownerNode.ownerDocument.defaultView.getComputedStyle(
+            self.ownerNode, None)
 
         # type tells us whether we need to draw the left and right borders,
         # paddings, and margins
@@ -140,15 +142,34 @@ class TextBox(InlineBox):
         # TODO: implement different white-space settings
 
         # compress down whitespace
-        if not text:
+        if text is None:
             text = elem.nodeValue
+
+        # If we're 'pre', we leave whitespace alone
+        if self.style.whiteSpace == 'pre':
+            self.pre = True
+            self.text = text
+        # Otherwise we compress it down
         else:
-            text = text.strip()
-        self.text = re.sub('\s+', ' ', text)
+            self.pre = False
+            self.text = re.sub('\s+', ' ', text)
         
         (self.width, self.height) = renderer.text_size(self.text,
                                                        self.ownerNode)
         self._calc_size()
+
+    def getLines(self):
+        chunks = self.text.split('\n')
+
+        lines = [TextBox(self.ownerNode, self._renderer, chunks[0], self, TextBox.LEFT)]
+
+        if len(chunks) > 1:
+            lines.extend((TextBox(self.ownerNode, self._renderer, chunk, self, TextBox.MID)
+                          for chunk in chunks[1:-1]))
+            lines.append(TextBox(self.ownerNode, self._renderer, chunks[-1], self, 
+                                 TextBox.RIGHT))
+
+        return lines
 
     def _calc_size(self):
         self._left_width = 0
@@ -157,8 +178,7 @@ class TextBox(InlineBox):
 
         return # TODO: make the following code work correctly
 
-        style = self.ownerNode.ownerDocument.getComputedStyle(
-            self.ownerNode, None)
+        style = self.style
         self._left_width = style.marginLeft + style.borderLeftWidth + \
                            style.paddingLeft
         self._right_width = style.paddingRight + style.borderRightWidth + \
@@ -208,8 +228,9 @@ class TextBox(InlineBox):
             if split_width == width:
                 break
 
+        # split on the space, throw the space away
         lefttext = text[:split]
-        righttext = text[split:]
+        righttext = text[split+1:]
 
         # Pick the type of the two sub-boxes based on the current type
         (lt, rt) = {
@@ -258,13 +279,6 @@ class LineBoxBox(BlockBox):
         self.addChildBox(LineBox(self.ownerNode, self,
                                  self.x, self._current_y))
         self._remaining_width = width
-        if style.whiteSpace == 'pre':
-            self.pre = True
-        else:
-            self.pre = False
-
-    def addPreInlineBox(self, box):
-        
 
     def addInlineBox(self, box):
         """ Add an inline box into the current line box or to a new
@@ -285,8 +299,15 @@ class LineBoxBox(BlockBox):
           - set the status of this box to overflowed,
         """
 
-        if self.pre:
-            self.addPreInlineBox(box)
+        # Split a pre inline box at line breaks, and line breaks only
+        if box.pre:
+            if len(self.childBoxes) < 1:
+                self.addLine()
+            lines = box.getLines()
+            for line in lines[:-1]:
+                self.childBoxes[-1].addChildBox(line)
+                self.addLine()
+            self.childBoxes[-1].addChildBox(lines[-1])
             return
 
         nextbox = box
@@ -305,15 +326,17 @@ class LineBoxBox(BlockBox):
             if width > self._remaining_width:
                 boxes = box.split(self._remaining_width)
                 box = boxes[0]
-                #import pdb
-                #pdb.set_trace()
+
+                width = box.fullWidth()
+
                 #continue if the box was split
                 if len(boxes) == 2:
                     nextbox = boxes[1]
+
                 # if the returned box doesn't fit on the current line and there
                 # are already elements on the current line, add a new line
-                if box.fullWidth() > self._remaining_width and \
-                       len(self.childBoxes[-1].childBoxes) > 0:
+                if width > self._remaining_width and \
+                        len(self.childBoxes[-1].childBoxes) > 0:
                     self.addLine()
                  
             self.childBoxes[-1].addChildBox(box)

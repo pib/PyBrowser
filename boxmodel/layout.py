@@ -101,8 +101,6 @@ class PageLayout:
             if not elem: break
 
             if elem.nodeName == '#text':
-                #import pdb
-                #pdb.set_trace()
                 textbox = TextBox(elem, self._browser.renderer)
                 box.addInlineBox(textbox)
             # TODO: Add replaced and inline-block code here
