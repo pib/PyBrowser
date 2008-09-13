@@ -1597,7 +1597,7 @@ class ViewCSS(AbstractView):
                                        visibility: visible;
                                        z-index: auto;
                                        overflow: visible;
-                                       white-space: normal;
+                                       white-space: pre;/*normal;*/
                                        clip: auto;
                                        float: none;
                                        clear: none;

@@ -52,7 +52,8 @@ class PageLayout:
             style = self._document.defaultView.getComputedStyle(elem, None)
 
         if style.display == 'inline':
-            box = LineBoxBox(elem, self._current_box)
+            box = LineBoxBox(elem, self._current_box, 
+                             self._current_box.x, self._current_box.y)
             self.layoutInlineBoxes(box)
         elif style.display == 'block':
             box = BlockBox(elem, self._current_box)
@@ -100,6 +101,8 @@ class PageLayout:
             if not elem: break
 
             if elem.nodeName == '#text':
+                #import pdb
+                #pdb.set_trace()
                 textbox = TextBox(elem, self._browser.renderer)
                 box.addInlineBox(textbox)
             # TODO: Add replaced and inline-block code here

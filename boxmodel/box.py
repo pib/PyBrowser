@@ -101,6 +101,7 @@ class BlockBox(Box):
                 style.borderBottomStyle, style.borderLeftStyle)
             self.x = self._current_x = x
             self.y = self._current_y = y
+            self.style = style
 
 class InlineBox(Box):
     """ Base class for inline boxes. An inline box can (potentially)
@@ -232,26 +233,30 @@ class LineBox(BlockBox):
     def __init__(self, ownerNode, parentBox, x, y):
         BlockBox.__init__(self, ownerNode, parentBox, x, y)
         self.width = 0
+        self.height = 0
     def addChildBox(self, box):
         BlockBox.addChildBox(self, box)
-        #print 'x', self.x, 'width', self.width
-        box.x = 0#self.x + self.width
-        box.y = 0#self.y
+        #print 'x', box.x, 'width', self.width
+        box.x = self.x + self.width
+        box.y = self.y
         self.width += box.width
+        self.height = max(self.height, box.height)
 
 class LineBoxBox(BlockBox):
     """ Represents the implicit box which contains line boxes """
-    def __init__(self, ownerNode, parentBox, width=None):
-        BlockBox.__init__(self, ownerNode, parentBox, width, 0)
+    def __init__(self, ownerNode, parentBox, x=None, y=None):
+        BlockBox.__init__(self, ownerNode, parentBox, x, y)
         # remaining space on the current line, starts at zero so we add a new
         # line for the first inline box added.
         self._remaining_width = 0
 
     def addLine(self):
+        if len(self.childBoxes) > 0:
+            self._current_y += self.childBoxes[-1].height
         width = self.widthAtY(self._current_y)
         #print 'width', width, 'remainint', self._remaining_width
-        BlockBox.addChildBox(self, LineBox(self.ownerNode, self,
-                                           self.x, self._current_y))
+        self.addChildBox(LineBox(self.ownerNode, self,
+                                 self.x, self._current_y))
         self._remaining_width = width
 
     def addInlineBox(self, box):
@@ -275,6 +280,7 @@ class LineBoxBox(BlockBox):
 
         nextbox = box
         while nextbox:
+            box = nextbox
             nextbox = None
 
             width = box.fullWidth()
@@ -288,7 +294,8 @@ class LineBoxBox(BlockBox):
             if width > self._remaining_width:
                 boxes = box.split(self._remaining_width)
                 box = boxes[0]
-
+                #import pdb
+                #pdb.set_trace()
                 #continue if the box was split
                 if len(boxes) == 2:
                     nextbox = boxes[1]
