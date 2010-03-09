@@ -1,0 +1,10 @@
+This project is basically at the prototype stage at the moment, and
+can't do much but lay text out.
+
+Check out the comments in the code for how the layout engine
+works. Most of the work is done in boxmodel/box.py and
+boxmodel/layout.py
+
+getgoogle.py will fetch a page (not google, actually, hah!) and
+display the text wrapped nicely. It works as an example of how to use
+the layout engine.
